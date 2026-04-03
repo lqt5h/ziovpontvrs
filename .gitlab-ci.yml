@@ -1,0 +1,15 @@
+stages:
+  - build
+
+build-mingw:
+  stage: build
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq cmake g++-mingw-w64-x86-64 > /dev/null
+  script:
+    - cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw64.cmake
+    - cmake --build build --config Release
+  artifacts:
+    paths:
+      - build/ziovpontvrs.exe
+    expire_in: 7 days
