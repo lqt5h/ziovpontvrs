@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <wtsapi32.h>
 #include <userenv.h>
+#include <stdio.h>
 
 // ============================================================
 // Constants
@@ -38,9 +39,8 @@ static void LaunchGuiInSession(DWORD sessionId) {
     if (!GetGuiExePath(guiPath, MAX_PATH)) return;
 
     WCHAR cmdLine[MAX_PATH + 32];
-    _snwprintf(cmdLine, sizeof(cmdLine) / sizeof(WCHAR),
-               L"\"%s\" --silent", guiPath);
-    cmdLine[(sizeof(cmdLine) / sizeof(WCHAR)) - 1] = L'\0';
+    swprintf(cmdLine, sizeof(cmdLine) / sizeof(WCHAR),
+             L"\"%s\" --silent", guiPath);
 
     HANDLE hToken = NULL;
     if (!WTSQueryUserToken(sessionId, &hToken)) return;
