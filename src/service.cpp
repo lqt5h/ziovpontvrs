@@ -38,8 +38,9 @@ static void LaunchGuiInSession(DWORD sessionId) {
     if (!GetGuiExePath(guiPath, MAX_PATH)) return;
 
     WCHAR cmdLine[MAX_PATH + 32];
-    _snwprintf_s(cmdLine, _countof(cmdLine), _TRUNCATE,
-                 L"\"%s\" --silent", guiPath);
+    _snwprintf(cmdLine, sizeof(cmdLine) / sizeof(WCHAR),
+               L"\"%s\" --silent", guiPath);
+    cmdLine[(sizeof(cmdLine) / sizeof(WCHAR)) - 1] = L'\0';
 
     HANDLE hToken = NULL;
     if (!WTSQueryUserToken(sessionId, &hToken)) return;
