@@ -13,6 +13,7 @@
 static const WCHAR MUTEX_NAME[]   = L"Local\\ZiovpontvrsAppMutex";
 static const WCHAR CLASS_NAME[]   = L"ZiovpontvrsWindowClass";
 static const WCHAR WINDOW_TITLE[] = L"Ziovpontvrs";
+static const WCHAR SERVICE_NAME[] = L"ZiovpontvrsSvc";
 
 // ============================================================
 // Globals
@@ -22,6 +23,28 @@ static UINT  WM_TASKBARCREATED = 0;
 static HWND  g_hwnd            = NULL;
 static NOTIFYICONDATAW g_nid   = {};
 static BOOL  g_silentStart     = FALSE;
+
+// ============================================================
+// Service helper — check and start the service if stopped
+// ============================================================
+
+static void EnsureServiceRunning(void) {
+    SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!hSCM) return;
+
+    SC_HANDLE hSvc = OpenServiceW(hSCM, SERVICE_NAME,
+                                  SERVICE_QUERY_STATUS | SERVICE_START);
+    if (hSvc) {
+        SERVICE_STATUS status = {};
+        if (QueryServiceStatus(hSvc, &status)) {
+            if (status.dwCurrentState == SERVICE_STOPPED) {
+                StartServiceW(hSvc, 0, NULL);
+            }
+        }
+        CloseServiceHandle(hSvc);
+    }
+    CloseServiceHandle(hSCM);
+}
 
 // ============================================================
 // Tray icon helpers
@@ -132,6 +155,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         if (hMutex) CloseHandle(hMutex);
         return 0;
     }
+
+    /* ---- Ensure the background service is running ---- */
+    EnsureServiceRunning();
 
     /* ---- Silent‑start flag ---- */
     if (lpCmdLine && (wcsstr(lpCmdLine, L"--silent") || wcsstr(lpCmdLine, L"/silent"))) {
