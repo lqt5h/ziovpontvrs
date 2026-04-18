@@ -61,14 +61,7 @@ static void StopServiceViaRpc(void) {
     if (rs != RPC_S_OK) return;
 
     ZiovpontvrsRpc_IfHandle = hBinding;
-
-    RpcTryExcept {
-        RpcShutdown();
-    } RpcExcept(EXCEPTION_EXECUTE_HANDLER) {
-        /* The service may terminate this process before the call returns;
-         * swallow the exception either way. */
-    } RpcEndExcept
-
+    RpcShutdown();
     RpcBindingFree(&hBinding);
     ZiovpontvrsRpc_IfHandle = NULL;
 }
