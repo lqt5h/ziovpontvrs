@@ -21,6 +21,24 @@ set(RPC_CLIENT  ${RPC_GEN_DIR}/rpc_iface_c.c)
 set(RPC_SERVER  ${RPC_GEN_DIR}/rpc_iface_s.c)
 
 file(MAKE_DIRECTORY ${RPC_GEN_DIR})
+file(MAKE_DIRECTORY ${RPC_GEN_DIR}/wine)
+file(WRITE ${RPC_GEN_DIR}/wine/exception.h
+"#ifndef __WINE_EXCEPTION_H\n"
+"#define __WINE_EXCEPTION_H\n"
+"#include <windows.h>\n"
+"#define __TRY                      if (1) {\n"
+"#define __EXCEPT(filter)           } else\n"
+"#define __EXCEPT_PAGE_FAULT        } else\n"
+"#define __EXCEPT_CTX(filter,ctx)   } else\n"
+"#define __EXCEPT_ALL               } else\n"
+"#define __FINALLY(handler)         }\n"
+"#define __FINALLY_CTX(handler,ctx) }\n"
+"#define __ENDTRY                   ((void)0)\n"
+"#define GetExceptionCode()         (0)\n"
+"#define GetExceptionInformation()  ((PEXCEPTION_POINTERS)NULL)\n"
+"#define AbnormalTermination()      (0)\n"
+"#endif\n"
+)
 
 add_custom_command(
     OUTPUT  ${RPC_HDR} ${RPC_CLIENT} ${RPC_SERVER}
