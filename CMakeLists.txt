@@ -37,10 +37,6 @@ file(WRITE ${RPC_GEN_DIR}/wine/exception.h
 "#ifndef EH_NESTED_CALL\n"
 "#define EH_NESTED_CALL  0x10\n"
 "#endif\n"
-"#define __DECL_EXCEPTION_FRAME \\\n"
-"    EXCEPTION_REGISTRATION_RECORD frame; \\\n"
-"    __wine_jmp_buf                jmp;   \\\n"
-"    int                           code;\n"
 "#define __TRY                       if (1) {\n"
 "#define __EXCEPT(filter)            } else\n"
 "#define __EXCEPT_PAGE_FAULT         } else\n"
@@ -53,6 +49,7 @@ file(WRITE ${RPC_GEN_DIR}/wine/exception.h
 "static inline void __wine_push_frame(EXCEPTION_REGISTRATION_RECORD *f) { (void)f; }\n"
 "static inline void __wine_pop_frame(EXCEPTION_REGISTRATION_RECORD *f) { (void)f; }\n"
 "static inline void __wine_longjmp(__wine_jmp_buf *b, int r) { (void)b; (void)r; }\n"
+"static inline int __wine_setjmpex(__wine_jmp_buf *b, void *f) { (void)b; (void)f; return 0; }\n"
 "static inline void __wine_rtl_unwind(EXCEPTION_REGISTRATION_RECORD *f, EXCEPTION_RECORD *r, void *t) { (void)f; (void)r; (void)t; }\n"
 "#endif\n"
 )
