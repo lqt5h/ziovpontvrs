@@ -1,0 +1,17 @@
+/*
+ * RPC interface between the GUI client and the Windows service.
+ * Transport: ALPC (ncalrpc). A single operation stops the service.
+ */
+
+import "wtypes.idl";
+
+[
+    uuid(7F9C3A4E-1E2D-4A1B-8B5C-1A2B3C4D5E6F),
+    version(1.0),
+    pointer_default(unique),
+    implicit_handle(handle_t ZiovpontvrsRpc_IfHandle)
+]
+interface ZiovpontvrsRpc
+{
+    void RpcShutdown(void);
+}
