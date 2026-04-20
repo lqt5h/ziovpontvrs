@@ -11,6 +11,7 @@ extern "C" {
 #include "rpc_iface.h"
 }
 #include "rpc_common.h"
+#include "auth_state.h"
 
 // ============================================================
 // Constants
@@ -45,6 +46,55 @@ static BOOL ConfirmShutdownOnSecureDesktop(void);
 extern "C" void RpcShutdown(void) {
     if (!ConfirmShutdownOnSecureDesktop()) return;
     RpcMgmtStopServerListening(NULL);
+}
+
+/* ------------------------------------------------------------
+ * Auth RPC — all signatures match the widl-generated server stubs in
+ * rpc_iface.h (see src/rpc_iface.idl). Nothing here exposes the raw JWT
+ * tokens or the license ticket to callers. */
+
+extern "C" long RpcLogin(const wchar_t *username, const wchar_t *password) {
+    return auth::Login(username, password);
+}
+
+extern "C" long RpcLogout(void) {
+    return auth::Logout();
+}
+
+extern "C" long RpcGetCurrentUser(long *isAuthenticated, wchar_t **username) {
+    if (!isAuthenticated || !username) return auth::kErrInternal;
+
+    *isAuthenticated = auth::IsAuthenticated() ? 1 : 0;
+
+    WCHAR tmp[256] = L"";
+    if (*isAuthenticated) auth::GetUsername(tmp, 256);
+
+    size_t nbytes = (wcslen(tmp) + 1) * sizeof(WCHAR);
+    WCHAR *buf = static_cast<WCHAR *>(MIDL_user_allocate(nbytes));
+    if (!buf) return auth::kErrInternal;
+    memcpy(buf, tmp, nbytes);
+    *username = buf;
+    return auth::kOk;
+}
+
+extern "C" long RpcGetLicenseStatus(long *hasLicense, hyper *expirationFileTime) {
+    if (!hasLicense || !expirationFileTime) return auth::kErrInternal;
+    *hasLicense         = auth::HasLicense() ? 1 : 0;
+    *expirationFileTime = 0;
+    if (*hasLicense) {
+        LONGLONG ft = 0;
+        auth::GetLicenseExpiration(&ft);
+        *expirationFileTime = ft;
+    }
+    return auth::kOk;
+}
+
+extern "C" long RpcActivateProduct(const wchar_t *activationCode) {
+    return auth::Activate(activationCode);
+}
+
+extern "C" long RpcAntivirusScan(void) {
+    return auth::CheckAntivirusAllowed();
 }
 
 // ============================================================
@@ -327,6 +377,10 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
         return;
     }
 
+    /* Bring up the auth / license state machine — starts the background
+     * refresh threads. They idle until a user logs in. */
+    auth::Init();
+
     SvcReportStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
     ProtectProcess(GetCurrentProcess());
@@ -337,6 +391,7 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
     /* Block until a client calls RpcShutdown(). */
     RpcServerListen(1, RPC_C_LISTEN_MAX_CALLS_DEFAULT, FALSE);
 
+    auth::Shutdown();
     StopRpcServer();
 
     /* Kill every GUI instance we launched. */

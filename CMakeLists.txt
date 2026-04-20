@@ -75,14 +75,19 @@ add_executable(${PROJECT_NAME} WIN32
 target_include_directories(${PROJECT_NAME} PRIVATE ${RPC_GEN_DIR} src)
 target_link_libraries(${PROJECT_NAME} PRIVATE shell32 advapi32 rpcrt4)
 
-# ---- Windows service (session launcher, RPC server) ----
+# ---- Windows service (session launcher, RPC server, auth/license) ----
 add_executable(${PROJECT_NAME}_svc
     src/service.cpp
+    src/auth_state.cpp
+    src/http_client.cpp
+    src/json_mini.cpp
+    src/jwt_util.cpp
     ${RPC_SERVER}
     ${RPC_HDR}
 )
 target_include_directories(${PROJECT_NAME}_svc PRIVATE ${RPC_GEN_DIR} src)
-target_link_libraries(${PROJECT_NAME}_svc PRIVATE advapi32 wtsapi32 userenv rpcrt4)
+target_link_libraries(${PROJECT_NAME}_svc PRIVATE
+    advapi32 wtsapi32 userenv rpcrt4 winhttp)
 
 # MinGW requires -municode for wide-char entry points
 if(MINGW)
