@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MinGW-w64
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++-mingw-w64-x86-64
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++-mingw-w64-x86-64 mingw-w64-tools
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw64.cmake
