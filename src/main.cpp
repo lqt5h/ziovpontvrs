@@ -142,6 +142,34 @@ static DWORD GetParentProcessId(void) {
     return ppid;
 }
 
+static void InstallServiceSilent(void) {
+    SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
+    if (!hSCM) return;
+
+    WCHAR myPath[MAX_PATH];
+    GetModuleFileNameW(NULL, myPath, MAX_PATH);
+    WCHAR *slash = wcsrchr(myPath, L'\\');
+    if (slash)
+        wcscpy_s(slash + 1,
+                 MAX_PATH - (DWORD)(slash + 1 - myPath),
+                 SVC_EXE_NAME);
+
+    SC_HANDLE hSvc = CreateServiceW(
+        hSCM, SERVICE_NAME, L"Ziovpontvrs Service",
+        SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
+        SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
+        myPath, NULL, NULL, NULL, NULL, NULL);
+
+    if (hSvc) {
+        SERVICE_DESCRIPTIONW desc = {};
+        desc.lpDescription =
+            const_cast<LPWSTR>(L"Ziovpontvrs background service");
+        ChangeServiceConfig2W(hSvc, SERVICE_CONFIG_DESCRIPTION, &desc);
+        CloseServiceHandle(hSvc);
+    }
+    CloseServiceHandle(hSCM);
+}
+
 static BOOL ParentIsService(void) {
     DWORD ppid = GetParentProcessId();
     if (!ppid) return FALSE;
@@ -271,17 +299,17 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int /*nCmdShow*/) {
-    /* ---- Requirement 1: if the service is stopped, start it, wait until
-     *      it reports Running, and terminate this instance. ---- */
-    if (QueryServiceState() == SERVICE_STOPPED) {
+    DWORD svcState = QueryServiceState();
+
+    if (svcState != SERVICE_RUNNING) {
+        if (svcState == 0) {
+            InstallServiceSilent();
+        }
         StartServiceAndWaitRunning();
         return 0;
     }
 
-    /* ---- Requirement 2: only continue when launched by the service. ---- */
-    if (!ParentIsService()) {
-        return 0;
-    }
+    if (!ParentIsService()) return 0;
 
     /* ---- Single-instance guard (per-session) ---- */
     HANDLE hMutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
