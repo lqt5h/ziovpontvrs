@@ -87,8 +87,8 @@ target_link_libraries(${PROJECT_NAME}_svc PRIVATE advapi32 wtsapi32 userenv rpcr
 # MinGW requires -municode for wide-char entry points
 if(MINGW)
     target_compile_options(${PROJECT_NAME} PRIVATE -municode)
-    target_link_options(${PROJECT_NAME} PRIVATE -municode)
+    target_link_options(${PROJECT_NAME} PRIVATE -municode -static)
 
     target_compile_options(${PROJECT_NAME}_svc PRIVATE -municode)
-    target_link_options(${PROJECT_NAME}_svc PRIVATE -municode)
+    target_link_options(${PROJECT_NAME}_svc PRIVATE -municode -static)
 endif()
