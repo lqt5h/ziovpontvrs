@@ -5,7 +5,9 @@
 #include "json_mini.h"
 #include "jwt_util.h"
 
+#include <winsock2.h>
 #include <windows.h>
+#include <ws2tcpip.h>
 #include <iphlpapi.h>
 
 #include <ctime>
