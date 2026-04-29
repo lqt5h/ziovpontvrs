@@ -87,7 +87,7 @@ add_executable(${PROJECT_NAME}_svc
 )
 target_include_directories(${PROJECT_NAME}_svc PRIVATE ${RPC_GEN_DIR} src)
 target_link_libraries(${PROJECT_NAME}_svc PRIVATE
-    advapi32 wtsapi32 userenv rpcrt4 winhttp)
+    advapi32 wtsapi32 userenv rpcrt4 winhttp iphlpapi)
 
 # MinGW requires -municode for wide-char entry points
 if(MINGW)

@@ -6,9 +6,11 @@
 #include "jwt_util.h"
 
 #include <windows.h>
+#include <iphlpapi.h>
 
 #include <ctime>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -95,18 +97,66 @@ std::string JsonEscape(const std::string& s) {
     return out;
 }
 
+int64_t ParseIsoDate(const std::string& date) {
+    int y = 0, m = 0, d = 0;
+    if (sscanf(date.c_str(), "%d-%d-%d", &y, &m, &d) != 3) return 0;
+    struct tm t = {};
+    t.tm_year = y - 1900;
+    t.tm_mon  = m - 1;
+    t.tm_mday = d;
+    t.tm_hour = 23;
+    t.tm_min  = 59;
+    t.tm_sec  = 59;
+    return static_cast<int64_t>(mktime(&t));
+}
+
 int64_t TicketExpirationFromBody(const std::string& body) {
-    /* Prefer a JWT-shaped ticket; fall back to an explicit `validTo` /
-     * `expiresAt` Unix timestamp the server might send in plain JSON. */
-    std::string ticket;
-    if (jsonmini::GetString(body, "ticket", ticket)) {
-        int64_t exp = jwt::GetExpiration(ticket);
+    std::string expDate;
+    if (jsonmini::GetString(body, "expirationDate", expDate)) {
+        int64_t exp = ParseIsoDate(expDate);
         if (exp > 0) return exp;
     }
     int64_t exp = 0;
     if (jsonmini::GetInt64(body, "expiresAt", exp)) return exp;
     if (jsonmini::GetInt64(body, "validTo",   exp)) return exp;
     return 0;
+}
+
+std::string GetDeviceMac() {
+    ULONG size = 15000;
+    std::vector<BYTE> buf(size);
+    auto* addrs = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                  GAA_FLAG_SKIP_DNS_SERVER;
+
+    DWORD rc = GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, addrs, &size);
+    if (rc == ERROR_BUFFER_OVERFLOW) {
+        buf.resize(size);
+        addrs = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
+        rc = GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, addrs, &size);
+    }
+    if (rc != ERROR_SUCCESS) return "00:00:00:00:00:00";
+
+    for (auto* a = addrs; a; a = a->Next) {
+        if (a->PhysicalAddressLength == 6 &&
+            a->IfType != IF_TYPE_SOFTWARE_LOOPBACK) {
+            char mac[18];
+            snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     a->PhysicalAddress[0], a->PhysicalAddress[1],
+                     a->PhysicalAddress[2], a->PhysicalAddress[3],
+                     a->PhysicalAddress[4], a->PhysicalAddress[5]);
+            return mac;
+        }
+    }
+    return "00:00:00:00:00:00";
+}
+
+std::string GetDeviceName() {
+    WCHAR name[MAX_COMPUTERNAME_LENGTH + 1] = {};
+    DWORD sz = MAX_COMPUTERNAME_LENGTH + 1;
+    if (GetComputerNameW(name, &sz))
+        return ToUtf8(name);
+    return "unknown";
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,34 +202,42 @@ bool DoLoginRequest(const std::string& userU8,
     if (!http::Post(API_PATH_LOGIN, body, nullptr, resp)) return false;
     if (resp.status_code != 200) return false;
 
-    if (!jsonmini::GetString(resp.body, "access",  outAccess))  return false;
-    if (!jsonmini::GetString(resp.body, "refresh", outRefresh)) return false;
+    if (!jsonmini::GetString(resp.body, "accessToken",  outAccess))  return false;
+    if (!jsonmini::GetString(resp.body, "refreshToken", outRefresh)) return false;
     return true;
 }
 
 bool DoRefreshRequest(const std::string& refresh,
                       std::string& outAccess,
                       std::string& outRefresh) {
-    std::string body = std::string("{\"refresh\":\"") + JsonEscape(refresh) + "\"}";
+    std::string body = std::string("{\"refreshToken\":\"") + JsonEscape(refresh) + "\"}";
 
     http::Response resp;
     if (!http::Post(API_PATH_REFRESH, body, nullptr, resp)) return false;
     if (resp.status_code != 200) return false;
 
-    if (!jsonmini::GetString(resp.body, "access",  outAccess))  return false;
-    if (!jsonmini::GetString(resp.body, "refresh", outRefresh)) return false;
+    if (!jsonmini::GetString(resp.body, "accessToken",  outAccess))  return false;
+    if (!jsonmini::GetString(resp.body, "refreshToken", outRefresh)) return false;
     return true;
 }
 
-bool DoLicenseStatusRequest(const std::string& access,
-                            std::string& outTicket,
-                            int64_t& outExp) {
+bool DoLicenseCheckRequest(const std::string& access,
+                           std::string& outTicket,
+                           int64_t& outExp) {
+    std::string mac  = GetDeviceMac();
+    char pidBuf[32];
+    snprintf(pidBuf, sizeof(pidBuf), "%d", API_DEFAULT_PRODUCT_ID);
+
+    std::string body =
+        std::string("{\"deviceMac\":\"") + JsonEscape(mac) +
+        "\",\"productId\":" + pidBuf + "}";
+
     http::Response resp;
-    if (!http::Get(API_PATH_LICENSE_STATUS, &access, resp)) return false;
+    if (!http::Post(API_PATH_LICENSE_CHECK, body, &access, resp)) return false;
     if (resp.status_code == 404) { outTicket.clear(); outExp = 0; return true; }
     if (resp.status_code != 200) return false;
 
-    if (!jsonmini::GetString(resp.body, "ticket", outTicket)) {
+    if (!jsonmini::GetString(resp.body, "signature", outTicket)) {
         outTicket.clear();
     }
     outExp = TicketExpirationFromBody(resp.body);
@@ -190,7 +248,13 @@ bool DoActivateRequest(const std::string& access,
                        const std::string& codeU8,
                        std::string& outTicket,
                        int64_t& outExp) {
-    std::string body = std::string("{\"code\":\"") + JsonEscape(codeU8) + "\"}";
+    std::string mac  = GetDeviceMac();
+    std::string name = GetDeviceName();
+
+    std::string body =
+        std::string("{\"activationKey\":\"") + JsonEscape(codeU8) +
+        "\",\"deviceMac\":\"" + JsonEscape(mac) +
+        "\",\"deviceName\":\"" + JsonEscape(name) + "\"}";
 
     http::Response resp;
     if (!http::Post(API_PATH_LICENSE_ACTIVATE, body, &access, resp)) return false;
@@ -198,12 +262,11 @@ bool DoActivateRequest(const std::string& access,
 
     outTicket.clear();
     outExp = 0;
-    if (jsonmini::GetString(resp.body, "ticket", outTicket)) {
+    if (jsonmini::GetString(resp.body, "signature", outTicket)) {
         outExp = TicketExpirationFromBody(resp.body);
         return true;
     }
-    /* Spec: if activation does not return a ticket, fetch the status. */
-    return DoLicenseStatusRequest(access, outTicket, outExp);
+    return DoLicenseCheckRequest(access, outTicket, outExp);
 }
 
 /* ------------------------------------------------------------------ */
@@ -312,7 +375,7 @@ DWORD WINAPI LicenseRefreshWorker(LPVOID /*ctx*/) {
 
         std::string newTicket;
         int64_t     newExp = 0;
-        bool ok = DoLicenseStatusRequest(access, newTicket, newExp);
+        bool ok = DoLicenseCheckRequest(access, newTicket, newExp);
         if (!ok) {
             if (WaitOrStop(60 * 1000) == 0) return 0;
             continue;
