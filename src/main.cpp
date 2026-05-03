@@ -142,32 +142,75 @@ static DWORD GetParentProcessId(void) {
     return ppid;
 }
 
-static void InstallServiceSilent(void) {
-    SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
-    if (!hSCM) return;
+static BOOL IsElevated(void) {
+    BOOL elevated = FALSE;
+    HANDLE hToken = NULL;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION te = {};
+        DWORD sz = sizeof(te);
+        if (GetTokenInformation(hToken, TokenElevation, &te, sizeof(te), &sz))
+            elevated = te.TokenIsElevated;
+        CloseHandle(hToken);
+    }
+    return elevated;
+}
 
-    WCHAR myPath[MAX_PATH];
-    GetModuleFileNameW(NULL, myPath, MAX_PATH);
-    WCHAR *slash = wcsrchr(myPath, L'\\');
+static void RelaunchElevated(void) {
+    WCHAR path[MAX_PATH];
+    GetModuleFileNameW(NULL, path, MAX_PATH);
+    ShellExecuteW(NULL, L"runas", path, L"--elevate", NULL, SW_HIDE);
+}
+
+static BOOL InstallAndStartService(void) {
+    WCHAR svcPath[MAX_PATH];
+    GetModuleFileNameW(NULL, svcPath, MAX_PATH);
+    WCHAR *slash = wcsrchr(svcPath, L'\\');
     if (slash)
         wcscpy_s(slash + 1,
-                 MAX_PATH - (DWORD)(slash + 1 - myPath),
+                 MAX_PATH - (DWORD)(slash + 1 - svcPath),
                  SVC_EXE_NAME);
 
-    SC_HANDLE hSvc = CreateServiceW(
-        hSCM, SERVICE_NAME, L"Ziovpontvrs Service",
-        SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
-        SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
-        myPath, NULL, NULL, NULL, NULL, NULL);
+    SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL,
+                                    SC_MANAGER_CREATE_SERVICE | SC_MANAGER_CONNECT);
+    if (!hSCM) return FALSE;
 
-    if (hSvc) {
-        SERVICE_DESCRIPTIONW desc = {};
-        desc.lpDescription =
-            const_cast<LPWSTR>(L"Ziovpontvrs background service");
-        ChangeServiceConfig2W(hSvc, SERVICE_CONFIG_DESCRIPTION, &desc);
-        CloseServiceHandle(hSvc);
+    SC_HANDLE hSvc = OpenServiceW(hSCM, SERVICE_NAME,
+                                  SERVICE_ALL_ACCESS);
+    if (!hSvc) {
+        hSvc = CreateServiceW(
+            hSCM, SERVICE_NAME, L"Ziovpontvrs Service",
+            SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
+            SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
+            svcPath, NULL, NULL, NULL, NULL, NULL);
+        if (hSvc) {
+            SERVICE_DESCRIPTIONW desc = {};
+            desc.lpDescription =
+                const_cast<LPWSTR>(L"Ziovpontvrs background service");
+            ChangeServiceConfig2W(hSvc, SERVICE_CONFIG_DESCRIPTION, &desc);
+        }
     }
+
+    if (!hSvc) {
+        CloseServiceHandle(hSCM);
+        return FALSE;
+    }
+
+    StartServiceW(hSvc, 0, NULL);
+
+    BOOL running = FALSE;
+    for (int i = 0; i < 60; i++) {
+        SERVICE_STATUS st = {};
+        if (QueryServiceStatus(hSvc, &st) &&
+            st.dwCurrentState == SERVICE_RUNNING) {
+            running = TRUE;
+            break;
+        }
+        Sleep(500);
+    }
+
+    CloseServiceHandle(hSvc);
     CloseServiceHandle(hSCM);
+    return running;
 }
 
 static BOOL ParentIsService(void) {
@@ -302,10 +345,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     DWORD svcState = QueryServiceState();
 
     if (svcState != SERVICE_RUNNING) {
-        if (svcState == 0) {
-            InstallServiceSilent();
+        if (!IsElevated()) {
+            RelaunchElevated();
+            return 0;
         }
-        StartServiceAndWaitRunning();
+        InstallAndStartService();
         return 0;
     }
 
