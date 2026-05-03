@@ -3,6 +3,7 @@
 #include <tlhelp32.h>
 #include <rpc.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 extern "C" {
 #include "rpc_iface.h"
@@ -172,11 +173,27 @@ static BOOL InstallAndStartService(void) {
 
     SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL,
                                     SC_MANAGER_CREATE_SERVICE | SC_MANAGER_CONNECT);
-    if (!hSCM) return FALSE;
+    if (!hSCM) {
+        MessageBoxW(NULL, L"OpenSCManager failed", WINDOW_TITLE, MB_ICONERROR);
+        return FALSE;
+    }
 
-    SC_HANDLE hSvc = OpenServiceW(hSCM, SERVICE_NAME,
-                                  SERVICE_ALL_ACCESS);
-    if (!hSvc) {
+    SC_HANDLE hSvc = OpenServiceW(hSCM, SERVICE_NAME, SERVICE_ALL_ACCESS);
+    if (hSvc) {
+        SERVICE_STATUS st = {};
+        QueryServiceStatus(hSvc, &st);
+        if (st.dwCurrentState != SERVICE_STOPPED) {
+            ControlService(hSvc, SERVICE_CONTROL_STOP, &st);
+            for (int i = 0; i < 20; i++) {
+                QueryServiceStatus(hSvc, &st);
+                if (st.dwCurrentState == SERVICE_STOPPED) break;
+                Sleep(500);
+            }
+        }
+        ChangeServiceConfigW(hSvc, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+                             SERVICE_NO_CHANGE, svcPath,
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+    } else {
         hSvc = CreateServiceW(
             hSCM, SERVICE_NAME, L"Ziovpontvrs Service",
             SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
@@ -191,11 +208,25 @@ static BOOL InstallAndStartService(void) {
     }
 
     if (!hSvc) {
+        DWORD err = GetLastError();
+        WCHAR buf[128];
+        swprintf(buf, 128, L"Service create/open failed (error %lu)", err);
+        MessageBoxW(NULL, buf, WINDOW_TITLE, MB_ICONERROR);
         CloseServiceHandle(hSCM);
         return FALSE;
     }
 
-    StartServiceW(hSvc, 0, NULL);
+    if (!StartServiceW(hSvc, 0, NULL)) {
+        DWORD err = GetLastError();
+        if (err != ERROR_SERVICE_ALREADY_RUNNING) {
+            WCHAR buf[128];
+            swprintf(buf, 128, L"StartService failed (error %lu)", err);
+            MessageBoxW(NULL, buf, WINDOW_TITLE, MB_ICONERROR);
+            CloseServiceHandle(hSvc);
+            CloseServiceHandle(hSCM);
+            return FALSE;
+        }
+    }
 
     BOOL running = FALSE;
     for (int i = 0; i < 60; i++) {
@@ -210,6 +241,9 @@ static BOOL InstallAndStartService(void) {
 
     CloseServiceHandle(hSvc);
     CloseServiceHandle(hSCM);
+    if (!running)
+        MessageBoxW(NULL, L"Service did not reach RUNNING state",
+                    WINDOW_TITLE, MB_ICONERROR);
     return running;
 }
 
