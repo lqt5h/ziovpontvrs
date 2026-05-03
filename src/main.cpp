@@ -349,11 +349,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
             RelaunchElevated();
             return 0;
         }
-        InstallAndStartService();
-        return 0;
+        if (!InstallAndStartService())
+            return 1;
     }
-
-    if (!ParentIsService()) return 0;
 
     /* ---- Single-instance guard (per-session) ---- */
     HANDLE hMutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
