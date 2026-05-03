@@ -1,6 +1,15 @@
 /*
  * RPC interface between the GUI client and the Windows service.
- * Transport: ALPC (ncalrpc). A single operation stops the service.
+ * Transport: ALPC (ncalrpc).
+ *
+ * The service exposes four logical groups:
+ *   - service control   (shutdown)
+ *   - authentication    (login / logout / current user)
+ *   - licensing         (status / activation)
+ *   - antivirus         (gated by the license ticket)
+ *
+ * JWT tokens and the raw license ticket are NEVER exposed over RPC. The
+ * client receives only metadata — username, "has license", expiration time.
  */
 
 [
@@ -11,5 +20,27 @@
 ]
 interface ZiovpontvrsRpc
 {
+    /* --- Service control ------------------------------------------------ */
     void RpcShutdown(void);
+
+    /* --- Authentication ------------------------------------------------- */
+    long RpcLogin ([in, string] const wchar_t* username,
+                   [in, string] const wchar_t* password);
+
+    long RpcLogout(void);
+
+    /* Server-allocates the username string (MIDL_user_allocate); the
+     * client frees it with MIDL_user_free. */
+    long RpcGetCurrentUser(
+            [out]               long*     isAuthenticated,
+            [out, string]       wchar_t** username);
+
+    /* --- Licensing ------------------------------------------------------ */
+    long RpcGetLicenseStatus([out] long*  hasLicense,
+                             [out] hyper* expirationFileTime);
+
+    long RpcActivateProduct([in, string] const wchar_t* activationCode);
+
+    /* --- Antivirus (returns license-missing if the ticket is absent) ---- */
+    long RpcAntivirusScan(void);
 }
