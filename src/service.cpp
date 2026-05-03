@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <wtsapi32.h>
 #include <userenv.h>
+#include <aclapi.h>
 #include <rpc.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,12 +40,93 @@ extern "C" void __RPC_USER MIDL_user_free(void *p) {
     free(p);
 }
 
-/* Called by clients through the ALPC RPC transport. */
+static BOOL ConfirmShutdownOnSecureDesktop(void);
+
 extern "C" void RpcShutdown(void) {
-    /* Unblocks the RpcServerListen() call in SvcMain. The listener waits
-     * for all in-flight RPCs (including this one) to return before it
-     * releases, so this is safe to call from inside the stub. */
+    if (!ConfirmShutdownOnSecureDesktop()) return;
     RpcMgmtStopServerListening(NULL);
+}
+
+// ============================================================
+// DACL — deny PROCESS_TERMINATE to Everyone (including admins)
+// ============================================================
+
+static void ProtectProcess(HANDLE hProcess) {
+    SID_IDENTIFIER_AUTHORITY worldAuth = SECURITY_WORLD_SID_AUTHORITY;
+    PSID pEveryoneSid = NULL;
+    if (!AllocateAndInitializeSid(&worldAuth, 1, SECURITY_WORLD_RID,
+                                  0, 0, 0, 0, 0, 0, 0, &pEveryoneSid))
+        return;
+
+    EXPLICIT_ACCESSW ea = {};
+    ea.grfAccessPermissions = PROCESS_TERMINATE;
+    ea.grfAccessMode        = DENY_ACCESS;
+    ea.grfInheritance       = NO_INHERITANCE;
+    ea.Trustee.TrusteeForm  = TRUSTEE_IS_SID;
+    ea.Trustee.TrusteeType  = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea.Trustee.ptstrName    = (LPWSTR)pEveryoneSid;
+
+    PACL pOldDacl = NULL;
+    PSECURITY_DESCRIPTOR pSD = NULL;
+    GetSecurityInfo(hProcess, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION,
+                    NULL, NULL, &pOldDacl, NULL, &pSD);
+
+    PACL pNewDacl = NULL;
+    if (SetEntriesInAclW(1, &ea, pOldDacl, &pNewDacl) == ERROR_SUCCESS && pNewDacl) {
+        SetSecurityInfo(hProcess, SE_KERNEL_OBJECT,
+                        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                        NULL, NULL, pNewDacl, NULL);
+        LocalFree(pNewDacl);
+    }
+
+    if (pSD) LocalFree(pSD);
+    FreeSid(pEveryoneSid);
+}
+
+// ============================================================
+// Secure Desktop — shutdown confirmation via WTSSendMessage
+// ============================================================
+
+static DWORD GetActiveSessionId(void) {
+    PWTS_SESSION_INFOW pSessions = NULL;
+    DWORD count = 0;
+    if (!WTSEnumerateSessionsW(WTS_CURRENT_SERVER_HANDLE, 0, 1,
+                               &pSessions, &count))
+        return 0;
+    DWORD sid = 0;
+    for (DWORD i = 0; i < count; i++) {
+        if (pSessions[i].State == WTSActive && pSessions[i].SessionId != 0) {
+            sid = pSessions[i].SessionId;
+            break;
+        }
+    }
+    WTSFreeMemory(pSessions);
+    return sid;
+}
+
+static BOOL ConfirmShutdownOnSecureDesktop(void) {
+    DWORD sessionId = GetActiveSessionId();
+    if (sessionId == 0) return TRUE;
+
+    const WCHAR title[]   = L"Ziovpontvrs";
+    const WCHAR message[] = L"\x041E\x0441\x0442\x0430\x043D\x043E\x0432\x0438\x0442\x044C"
+                            L" \x0441\x043B\x0443\x0436\x0431\x0443 Ziovpontvrs?";
+
+    DWORD response = 0;
+    BOOL ok = WTSSendMessageW(
+        WTS_CURRENT_SERVER_HANDLE,
+        sessionId,
+        const_cast<LPWSTR>(title),
+        (DWORD)(wcslen(title) * sizeof(WCHAR)),
+        const_cast<LPWSTR>(message),
+        (DWORD)(wcslen(message) * sizeof(WCHAR)),
+        MB_YESNO | MB_ICONQUESTION,
+        0,
+        &response,
+        TRUE);
+
+    if (!ok) return TRUE;
+    return response == IDYES;
 }
 
 // ============================================================
@@ -120,7 +202,10 @@ static void LaunchGuiInSession(DWORD sessionId) {
 
     if (ok) {
         if (pi.hThread)  CloseHandle(pi.hThread);
-        if (pi.hProcess) TrackGuiProc(pi.hProcess);
+        if (pi.hProcess) {
+            ProtectProcess(pi.hProcess);
+            TrackGuiProc(pi.hProcess);
+        }
     }
 
     if (pEnv) DestroyEnvironmentBlock(pEnv);
@@ -243,6 +328,8 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
     }
 
     SvcReportStatus(SERVICE_RUNNING, NO_ERROR, 0);
+
+    ProtectProcess(GetCurrentProcess());
 
     /* Launch the GUI in every active session right away. */
     LaunchGuiInAllSessions();
