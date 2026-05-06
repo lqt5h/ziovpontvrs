@@ -92,14 +92,16 @@ SectionEnd
 
 ; --- Req 4-6: remove service, dependencies, files ---
 Section "Uninstall"
-    DetailPrint "Stopping service ${SERVICE_NAME}..."
-    nsExec::ExecToLog 'sc stop ${SERVICE_NAME}'
+    DetailPrint "Killing GUI process..."
+    nsExec::ExecToLog 'taskkill /F /IM ${EXE_GUI}'
     Pop $0
-    Sleep 4000
+
+    DetailPrint "Killing service process..."
+    nsExec::ExecToLog 'taskkill /F /IM ${EXE_SVC}'
+    Pop $0
+    Sleep 2000
 
     DetailPrint "Removing service ${SERVICE_NAME}..."
-    nsExec::ExecToLog '"$INSTDIR\${EXE_SVC}" uninstall'
-    Pop $0
     nsExec::ExecToLog 'sc delete ${SERVICE_NAME}'
     Pop $0
 
