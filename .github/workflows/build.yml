@@ -21,10 +21,39 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Upload artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ziovpontvrs-win64
           path: |
             build/ziovpontvrs.exe
             build/ziovpontvrs_svc.exe
+
+  build-installer:
+    needs: build-mingw
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ziovpontvrs-win64
+          path: installer/
+
+      - name: Download VC++ Redistributable
+        run: >
+          wget -q -O installer/vc_redist.x64.exe
+          "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+      - name: Install NSIS
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+
+      - name: Build installer
+        run: makensis installer/ziovpontvrs.nsi
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ziovpontvrs-installer
+          path: installer/ziovpontvrs-setup.exe
