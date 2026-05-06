@@ -44,13 +44,17 @@ Function IsVCRedistInstalled
     ${EndIf}
 FunctionEnd
 
-; --- Req 1-3: install artifacts, dependencies, register service ---
+; ============================================================
+; Req 1-3: install artifacts, dependencies, register service
+; ============================================================
 Section "Install"
     SetOutPath "$INSTDIR"
 
+    ; --- Req 1: all build artifacts ---
     File "${EXE_GUI}"
     File "${EXE_SVC}"
 
+    ; --- Req 2: third-party dependencies ---
     Call IsVCRedistInstalled
     Pop $0
     ${If} $0 == 0
@@ -81,17 +85,42 @@ Section "Install"
     IntFmt $0 "0x%08X" $0
     WriteRegDWORD HKLM "${REG_UNINSTALL}" "EstimatedSize" $0
 
+    ; --- Req 3: register Windows service for auto-start ---
+    ; Clean up any leftover service from previous install
+    DetailPrint "Cleaning up previous service registration..."
+    nsExec::ExecToLog 'taskkill /F /IM ${EXE_GUI}'
+    Pop $0
+    nsExec::ExecToLog 'taskkill /F /IM ${EXE_SVC}'
+    Pop $0
+    Sleep 1000
+    nsExec::ExecToLog 'sc delete ${SERVICE_NAME}'
+    Pop $0
+    Sleep 1000
+
     DetailPrint "Registering service ${SERVICE_NAME}..."
     nsExec::ExecToLog '"$INSTDIR\${EXE_SVC}" install'
+    Pop $0
+
+    ; Force auto-start in case CreateServiceW silently failed
+    DetailPrint "Ensuring auto-start configuration..."
+    nsExec::ExecToLog 'sc config ${SERVICE_NAME} start= auto'
     Pop $0
 
     DetailPrint "Starting service ${SERVICE_NAME}..."
     nsExec::ExecToLog 'sc start ${SERVICE_NAME}'
     Pop $0
+
+    ; Verify service is running
+    DetailPrint "Verifying service status..."
+    nsExec::ExecToLog 'sc query ${SERVICE_NAME}'
+    Pop $0
 SectionEnd
 
-; --- Req 4-6: remove service, dependencies, files ---
+; ============================================================
+; Req 4-6: stop service, remove dependencies, delete files
+; ============================================================
 Section "Uninstall"
+    ; --- Req 6: stop and remove the service ---
     DetailPrint "Killing GUI process..."
     nsExec::ExecToLog 'taskkill /F /IM ${EXE_GUI}'
     Pop $0
@@ -104,7 +133,9 @@ Section "Uninstall"
     DetailPrint "Removing service ${SERVICE_NAME}..."
     nsExec::ExecToLog 'sc delete ${SERVICE_NAME}'
     Pop $0
+    Sleep 1000
 
+    ; --- Req 5: remove dependencies if installed by us ---
     ReadRegDWORD $0 HKLM "${REG_APP}" "VCRedistInstalledByUs"
     ${If} $0 == 1
         DetailPrint "Removing Visual C++ Redistributable..."
@@ -112,13 +143,17 @@ Section "Uninstall"
         Pop $1
         nsExec::ExecToLog 'MsiExec.exe /x{F4499EE3-A166-496C-81BB-51D1BCDC70A9} /quiet /norestart'
         Pop $1
+    ${Else}
+        DetailPrint "Visual C++ Redistributable was not installed by us, keeping it."
     ${EndIf}
 
+    ; --- Req 4: remove all application files ---
     Delete "$INSTDIR\${EXE_GUI}"
     Delete "$INSTDIR\${EXE_SVC}"
     Delete "$INSTDIR\${UNINSTALLER}"
     RMDir "$INSTDIR"
 
+    ; Clean up registry
     DeleteRegKey HKLM "${REG_UNINSTALL}"
     DeleteRegKey HKLM "${REG_APP}"
 SectionEnd
