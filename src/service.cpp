@@ -314,7 +314,7 @@ static void LaunchGuiInSession(DWORD sessionId) {
 
     WCHAR cmdLine[MAX_PATH + 32];
     swprintf(cmdLine, sizeof(cmdLine) / sizeof(WCHAR),
-             L"\"%s\" --silent", guiPath);
+             L"\"%ls\" --silent", guiPath);
 
     HANDLE hToken = NULL;
     if (!WTSQueryUserToken(sessionId, &hToken)) return;

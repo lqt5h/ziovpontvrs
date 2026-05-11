@@ -417,8 +417,8 @@ static void RefreshUi(HWND hwnd) {
     /* Authenticated — surface the username and check license. */
     {
         WCHAR buf[320];
-        swprintf(buf, 320, L"\x041F\x043E\x043B\x044C\x0437\x043E\x0432\x0430\x0442\x0435\x043B\x044C: %s",
-                 g_currentUser);                              /* Пользователь: %s */
+        swprintf(buf, 320, L"\x041F\x043E\x043B\x044C\x0437\x043E\x0432\x0430\x0442\x0435\x043B\x044C: %ls",
+                 g_currentUser);
         SetTextW(g_dashUserLbl, buf);
         SetTextW(g_actUserLbl,  buf);
     }
@@ -438,7 +438,7 @@ static void RefreshUi(HWND hwnd) {
     FormatFileTime(expFt, when, 64);
     WCHAR expLine[160];
     swprintf(expLine, 160,
-             L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %s",
+             L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %ls",
              when);
     SetTextW(g_dashExpiryLbl, expLine);
 
@@ -447,7 +447,7 @@ static void RefreshUi(HWND hwnd) {
     if (RpcGetAvDatabaseInfo(&dbCount, &dbDate) == AUTH_OK) {
         WCHAR dbInfo[256];
         swprintf(dbInfo, 256,
-                 L"\x0410\x0412 \x0431\x0430\x0437\x044B: %s, "
+                 L"\x0410\x0412 \x0431\x0430\x0437\x044B: %ls, "
                  L"\x0437\x0430\x043F\x0438\x0441\x0435\x0439: %ld",
                  dbDate ? dbDate : L"-", dbCount);
         SetTextW(g_dashAvDbInfoLbl, dbInfo);
@@ -686,7 +686,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 FormatFileTime(expFt, when, 64);
                 WCHAR expLine[160];
                 swprintf(expLine, 160,
-                         L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %s",
+                         L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %ls",
                          when);
                 SetTextW(g_dashExpiryLbl, expLine);
                 if (g_page != PAGE_DASHBOARD) ShowPage(PAGE_DASHBOARD);
