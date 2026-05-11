@@ -523,13 +523,13 @@ static void OnScanClicked(HWND /*hwnd*/) {
     long rc = RpcAntivirusScan();
     if (rc == AUTH_OK) {
         SetTextW(g_dashScanStatus,
-                 L"\x0421\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435 \x0437\x0430\x043F\x0443\x0449\x0435\x043D\x043E");
+                 L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0430\x043A\x0442\x0438\x0432\x043D\x0430, \x0430\x043D\x0442\x0438\x0432\x0438\x0440\x0443\x0441 \x0440\x0430\x0431\x043E\x0442\x0430\x0435\x0442");
     } else if (rc == AUTH_ERR_LICENSE_MISSING) {
         SetTextW(g_dashScanStatus,
                  L"\x041D\x0435\x0442 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");
     } else {
         SetTextW(g_dashScanStatus,
-                 L"\x041E\x0448\x0438\x0431\x043A\x0430");
+                 L"\x041E\x0448\x0438\x0431\x043A\x0430 \x043F\x0440\x043E\x0432\x0435\x0440\x043A\x0438 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");
     }
 }
 
