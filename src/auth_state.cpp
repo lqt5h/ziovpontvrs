@@ -1,6 +1,7 @@
 #include "auth_state.h"
 
 #include "api_config.h"
+#include "av_engine.h"
 #include "http_client.h"
 #include "json_mini.h"
 #include "jwt_util.h"
@@ -174,6 +175,15 @@ DWORD WINAPI AntivirusWorker(LPVOID /*ctx*/) {
 
 void StartAntivirus() {
     if (g_avThread) return;
+
+    std::string token;
+    {
+        Guard g;
+        token = g_access;
+    }
+    if (!token.empty())
+        av::LoadDatabase(token);
+
     g_avStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_avThread    = CreateThread(nullptr, 0, AntivirusWorker, nullptr, 0, nullptr);
 }

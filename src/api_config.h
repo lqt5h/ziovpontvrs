@@ -11,4 +11,6 @@
 
 #define API_DEFAULT_PRODUCT_ID    1
 
+#define API_PATH_SIGNATURES       L"/api/signatures"
+
 #define API_REFRESH_SKEW_SEC      30

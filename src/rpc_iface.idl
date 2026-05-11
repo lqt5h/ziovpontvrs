@@ -43,4 +43,13 @@ interface ZiovpontvrsRpc
 
     /* --- Antivirus (returns license-missing if the ticket is absent) ---- */
     long RpcAntivirusScan(void);
+
+    long RpcScanFile([in, string] const wchar_t* filePath,
+                     [out, string] wchar_t** resultMessage);
+
+    long RpcScanDirectory([in, string] const wchar_t* dirPath,
+                          [out, string] wchar_t** resultMessage);
+
+    long RpcGetAvDatabaseInfo([out] long*  recordCount,
+                              [out, string] wchar_t** releaseDate);
 }

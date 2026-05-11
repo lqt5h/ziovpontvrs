@@ -12,6 +12,9 @@ extern "C" {
 }
 #include "rpc_common.h"
 #include "auth_state.h"
+#include "av_engine.h"
+
+#include <string>
 
 // ============================================================
 // Constants
@@ -95,6 +98,93 @@ extern "C" long RpcActivateProduct(const wchar_t *activationCode) {
 
 extern "C" long RpcAntivirusScan(void) {
     return auth::CheckAntivirusAllowed();
+}
+
+static WCHAR *AllocRpcString(const std::wstring& s) {
+    size_t nbytes = (s.size() + 1) * sizeof(WCHAR);
+    WCHAR *buf = static_cast<WCHAR *>(MIDL_user_allocate(nbytes));
+    if (buf) memcpy(buf, s.c_str(), nbytes);
+    return buf;
+}
+
+static std::wstring ToWideStr(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (n <= 1) return {};
+    std::wstring w(static_cast<size_t>(n - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
+    return w;
+}
+
+extern "C" long RpcScanFile(const wchar_t *filePath, wchar_t **resultMessage) {
+    if (!filePath || !resultMessage) return auth::kErrInternal;
+    long gate = auth::CheckAntivirusAllowed();
+    if (gate != auth::kOk) {
+        *resultMessage = AllocRpcString(L"\x041D\x0435\x0442 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");
+        return gate;
+    }
+
+    av::ScanReport report = av::ScanFile(filePath);
+    std::wstring msg;
+    if (report.result == av::SCAN_MALICIOUS) {
+        msg = L"\x0423\x0433\x0440\x043E\x0437\x0430 \x043E\x0431\x043D\x0430\x0440\x0443\x0436\x0435\x043D\x0430: ";
+        msg += filePath;
+    } else if (report.result == av::SCAN_ERROR) {
+        msg = L"\x041E\x0448\x0438\x0431\x043A\x0430 \x0441\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x044F: ";
+        msg += filePath;
+    } else {
+        msg = L"\x0427\x0438\x0441\x0442\x043E: ";
+        msg += filePath;
+    }
+    *resultMessage = AllocRpcString(msg);
+    return auth::kOk;
+}
+
+extern "C" long RpcScanDirectory(const wchar_t *dirPath, wchar_t **resultMessage) {
+    if (!dirPath || !resultMessage) return auth::kErrInternal;
+    long gate = auth::CheckAntivirusAllowed();
+    if (gate != auth::kOk) {
+        *resultMessage = AllocRpcString(L"\x041D\x0435\x0442 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");
+        return gate;
+    }
+
+    auto reports = av::ScanDirectory(dirPath);
+    int total = 0, threats = 0, errors = 0;
+    std::wstring details;
+    for (const auto& r : reports) {
+        total++;
+        if (r.result == av::SCAN_MALICIOUS) {
+            threats++;
+            details += L"\x0423\x0433\x0440\x043E\x0437\x0430: ";
+            details += r.filePath;
+            details += L"\n";
+        } else if (r.result == av::SCAN_ERROR) {
+            errors++;
+        }
+    }
+
+    WCHAR summary[512];
+    swprintf(summary, 512,
+             L"\x041F\x0440\x043E\x0432\x0435\x0440\x0435\x043D\x043E: %d, "
+             L"\x0443\x0433\x0440\x043E\x0437: %d, "
+             L"\x043E\x0448\x0438\x0431\x043E\x043A: %d",
+             total, threats, errors);
+    std::wstring msg = summary;
+    if (!details.empty()) {
+        msg += L"\n";
+        msg += details;
+    }
+    *resultMessage = AllocRpcString(msg);
+    return auth::kOk;
+}
+
+extern "C" long RpcGetAvDatabaseInfo(long *recordCount, wchar_t **releaseDate) {
+    if (!recordCount || !releaseDate) return auth::kErrInternal;
+    *recordCount = av::GetRecordCount();
+    std::string date = av::GetReleaseDate();
+    if (date.empty()) date = "-";
+    *releaseDate = AllocRpcString(ToWideStr(date));
+    return auth::kOk;
 }
 
 // ============================================================
@@ -380,6 +470,7 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
     /* Bring up the auth / license state machine — starts the background
      * refresh threads. They idle until a user logs in. */
     auth::Init();
+    av::InitDatabase();
 
     SvcReportStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
@@ -391,6 +482,7 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
     /* Block until a client calls RpcShutdown(). */
     RpcServerListen(1, RPC_C_LISTEN_MAX_CALLS_DEFAULT, FALSE);
 
+    av::ShutdownDatabase();
     auth::Shutdown();
     StopRpcServer();
 
