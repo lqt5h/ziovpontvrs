@@ -41,6 +41,8 @@ ObjectType DetectFileTypeFromHeader(const uint8_t* data, size_t len);
 void InitDatabase();
 void ShutdownDatabase();
 bool LoadDatabase(const std::string& accessToken);
+bool LoadDatabaseFromDisk();
+bool UpdateDatabase(const std::string& accessToken);
 
 int         GetRecordCount();
 std::string GetReleaseDate();

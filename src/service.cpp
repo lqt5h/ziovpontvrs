@@ -471,6 +471,7 @@ static void WINAPI SvcMain(DWORD /*argc*/, LPWSTR * /*argv*/) {
      * refresh threads. They idle until a user logs in. */
     auth::Init();
     av::InitDatabase();
+    av::LoadDatabaseFromDisk();
 
     SvcReportStatus(SERVICE_RUNNING, NO_ERROR, 0);
 

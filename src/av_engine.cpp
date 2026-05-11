@@ -1,4 +1,5 @@
 #include "av_engine.h"
+#include "av_database.h"
 #include "api_config.h"
 #include "http_client.h"
 #include "json_mini.h"
@@ -10,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <ctime>
 #include <algorithm>
 
 namespace {
@@ -164,6 +166,48 @@ bool ParseSignatureJson(const std::string& body) {
     return g_recordCount > 0 || body.find("[]") != std::string::npos;
 }
 
+void PopulateFromRawRecords(const std::vector<avdb::RawRecord>& records,
+                            int64_t generatedAt) {
+    g_database.clear();
+    g_recordCount = 0;
+
+    for (const auto& rec : records) {
+        if (rec.firstBytes.size() < 8) continue;
+        uint64_t prefix = ReadU64BE(rec.firstBytes.data());
+
+        DbEntry entry;
+        entry.threatName = rec.threatName;
+        entry.record.signaturePrefix  = prefix;
+        entry.record.signatureLength  = static_cast<uint32_t>(8 + rec.remainderLength);
+        entry.record.signatureHash    = rec.remainderHash;
+        entry.record.offsetBegin      = static_cast<uint64_t>(rec.offsetStart);
+        entry.record.offsetEnd        = static_cast<uint64_t>(rec.offsetEnd);
+        entry.record.objectType       = MapFileType(rec.fileType);
+
+        g_database[prefix].push_back(std::move(entry));
+        g_recordCount++;
+    }
+
+    if (generatedAt > 0) {
+        time_t t = static_cast<time_t>(generatedAt / 1000);
+        struct tm* lt = localtime(&t);
+        if (lt) {
+            char dateBuf[32];
+            snprintf(dateBuf, sizeof(dateBuf), "%02d.%02d.%04d %02d:%02d",
+                     lt->tm_mday, lt->tm_mon + 1, lt->tm_year + 1900,
+                     lt->tm_hour, lt->tm_min);
+            g_releaseDate = dateBuf;
+        }
+    } else {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        char dateBuf[32];
+        snprintf(dateBuf, sizeof(dateBuf), "%02u.%02u.%04u %02u:%02u",
+                 st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute);
+        g_releaseDate = dateBuf;
+    }
+}
+
 }  // anonymous namespace
 
 namespace av {
@@ -187,6 +231,66 @@ bool LoadDatabase(const std::string& accessToken) {
     if (resp.status_code != 200)
         return false;
     return ParseSignatureJson(resp.body);
+}
+
+bool LoadDatabaseFromDisk() {
+    wchar_t dir[MAX_PATH];
+    if (!avdb::GetDatabaseDir(dir, MAX_PATH)) return false;
+    std::wstring dbDir = dir;
+
+    std::vector<avdb::RawRecord> records;
+    int64_t generatedAt = 0;
+
+    avdb::LoadResult lr = avdb::LoadAndVerify(dbDir, records, generatedAt);
+    if (lr == avdb::LOAD_MANIFEST_SIG_FAIL) {
+        if (avdb::RestoreBackup(dbDir))
+            lr = avdb::LoadAndVerify(dbDir, records, generatedAt);
+    }
+    if (lr == avdb::LOAD_MANIFEST_SIG_FAIL || lr == avdb::LOAD_CORRUPT) {
+        if (avdb::RestoreBackup(dbDir))
+            lr = avdb::LoadAndVerify(dbDir, records, generatedAt);
+    }
+    if (lr != avdb::LOAD_OK) {
+        if (avdb::CopyDefaultDatabase(dbDir))
+            lr = avdb::LoadAndVerify(dbDir, records, generatedAt);
+    }
+    if (lr != avdb::LOAD_OK) return false;
+
+    EnterCriticalSection(&g_dbLock);
+    PopulateFromRawRecords(records, generatedAt);
+    LeaveCriticalSection(&g_dbLock);
+    return true;
+}
+
+bool UpdateDatabase(const std::string& accessToken) {
+    wchar_t dir[MAX_PATH];
+    if (!avdb::GetDatabaseDir(dir, MAX_PATH)) return false;
+    std::wstring dbDir = dir;
+
+    avdb::DatabaseFiles files;
+    if (!avdb::DownloadFromServer(accessToken, files))
+        return false;
+
+    avdb::SaveBackup(dbDir);
+
+    if (!avdb::SaveToFile(dbDir, files)) {
+        avdb::RestoreBackup(dbDir);
+        return false;
+    }
+
+    std::vector<avdb::RawRecord> records;
+    int64_t generatedAt = 0;
+    avdb::LoadResult lr = avdb::LoadAndVerify(dbDir, records, generatedAt);
+    if (lr != avdb::LOAD_OK) {
+        avdb::RestoreBackup(dbDir);
+        avdb::LoadAndVerify(dbDir, records, generatedAt);
+        return false;
+    }
+
+    EnterCriticalSection(&g_dbLock);
+    PopulateFromRawRecords(records, generatedAt);
+    LeaveCriticalSection(&g_dbLock);
+    return true;
 }
 
 int GetRecordCount() {

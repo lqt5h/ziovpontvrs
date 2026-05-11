@@ -29,8 +29,24 @@ jobs:
             build/ziovpontvrs.exe
             build/ziovpontvrs_svc.exe
 
+  gen-default-db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate default AV database
+        run: python3 tools/gen_default_db.py .
+
+      - name: Upload default database
+        uses: actions/upload-artifact@v4
+        with:
+          name: default-avdb
+          path: |
+            default_manifest.bin
+            default_data.bin
+
   build-installer:
-    needs: build-mingw
+    needs: [build-mingw, gen-default-db]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +55,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ziovpontvrs-win64
+          path: installer/
+
+      - name: Download default AV database
+        uses: actions/download-artifact@v4
+        with:
+          name: default-avdb
           path: installer/
 
       - name: Download VC++ Redistributable
