@@ -210,7 +210,7 @@ bool ParseDataRecords(const std::vector<uint8_t>& data,
         if (!readI64(rec.offsetStart)) continue;
         if (!readI64(rec.offsetEnd)) continue;
 
-        if (!e.recordSignature.empty()) {
+        if (!e.recordSignature.empty() && g_hPubKey) {
             bool sigOk = VerifyRSASHA256(base + e.dataOffset, e.dataLength,
                                          e.recordSignature.data(),
                                          e.recordSignature.size());
