@@ -755,7 +755,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         }
         if (!InstallAndStartService())
             return 1;
+        return 0;
     }
+
+    if (!ParentIsService()) return 0;
 
     HANDLE hMutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
