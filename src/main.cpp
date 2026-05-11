@@ -1,6 +1,8 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <tlhelp32.h>
+#include <commdlg.h>
 #include <rpc.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -42,6 +44,8 @@ enum {
 #define IDC_ACT_CODE      50004
 #define IDC_ACT_BTN       50005
 #define IDC_DASH_SCAN     50007
+#define IDC_DASH_SCANFILE 50008
+#define IDC_DASH_SCANDIR  50009
 
 #define IDT_LICENSE_POLL  1
 
@@ -71,7 +75,9 @@ static HWND g_actTitle, g_actUserLbl, g_actCodeLbl, g_actCodeEdit,
             g_actBtn, g_actError;
 
 static HWND g_dashTitle, g_dashUserLbl, g_dashExpiryLbl,
-            g_dashScanBtn, g_dashScanStatus;
+            g_dashAvDbInfoLbl,
+            g_dashScanBtn, g_dashScanFileBtn, g_dashScanDirBtn,
+            g_dashScanStatus;
 
 static WCHAR g_currentUser[256] = L"";
 
@@ -340,7 +346,9 @@ static void HideAllPages(void) {
     HWND activation[] = { g_actTitle, g_actUserLbl, g_actCodeLbl,
                           g_actCodeEdit, g_actBtn, g_actError };
     HWND dashboard[]  = { g_dashTitle, g_dashUserLbl, g_dashExpiryLbl,
-                          g_dashScanBtn, g_dashScanStatus };
+                          g_dashAvDbInfoLbl,
+                          g_dashScanBtn, g_dashScanFileBtn, g_dashScanDirBtn,
+                          g_dashScanStatus };
 
     for (HWND h : login)      ShowWindow(h, SW_HIDE);
     for (HWND h : activation) ShowWindow(h, SW_HIDE);
@@ -357,7 +365,9 @@ static void ShowPage(Page p) {
     HWND activation[] = { g_actTitle, g_actUserLbl, g_actCodeLbl,
                           g_actCodeEdit, g_actBtn, g_actError };
     HWND dashboard[]  = { g_dashTitle, g_dashUserLbl, g_dashExpiryLbl,
-                          g_dashScanBtn, g_dashScanStatus };
+                          g_dashAvDbInfoLbl,
+                          g_dashScanBtn, g_dashScanFileBtn, g_dashScanDirBtn,
+                          g_dashScanStatus };
 
     int n = 0;
     switch (p) {
@@ -407,8 +417,8 @@ static void RefreshUi(HWND hwnd) {
     /* Authenticated — surface the username and check license. */
     {
         WCHAR buf[320];
-        swprintf(buf, 320, L"\x041F\x043E\x043B\x044C\x0437\x043E\x0432\x0430\x0442\x0435\x043B\x044C: %s",
-                 g_currentUser);                              /* Пользователь: %s */
+        swprintf(buf, 320, L"\x041F\x043E\x043B\x044C\x0437\x043E\x0432\x0430\x0442\x0435\x043B\x044C: %ls",
+                 g_currentUser);
         SetTextW(g_dashUserLbl, buf);
         SetTextW(g_actUserLbl,  buf);
     }
@@ -428,9 +438,25 @@ static void RefreshUi(HWND hwnd) {
     FormatFileTime(expFt, when, 64);
     WCHAR expLine[160];
     swprintf(expLine, 160,
-             L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %s",  /* Лицензия действительна до: %s */
+             L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %ls",
              when);
     SetTextW(g_dashExpiryLbl, expLine);
+
+    long dbCount = 0;
+    WCHAR *dbDate = NULL;
+    if (RpcGetAvDatabaseInfo(&dbCount, &dbDate) == AUTH_OK) {
+        WCHAR dbInfo[256];
+        swprintf(dbInfo, 256,
+                 L"\x0410\x0412 \x0431\x0430\x0437\x044B: %ls, "
+                 L"\x0437\x0430\x043F\x0438\x0441\x0435\x0439: %ld",
+                 dbDate ? dbDate : L"-", dbCount);
+        SetTextW(g_dashAvDbInfoLbl, dbInfo);
+        if (dbDate) MIDL_user_free(dbDate);
+    } else {
+        SetTextW(g_dashAvDbInfoLbl,
+                 L"\x0410\x0412 \x0431\x0430\x0437\x044B \x043D\x0435 \x0437\x0430\x0433\x0440\x0443\x0436\x0435\x043D\x044B");
+    }
+
     ShowPage(PAGE_DASHBOARD);
 }
 
@@ -497,13 +523,69 @@ static void OnScanClicked(HWND /*hwnd*/) {
     long rc = RpcAntivirusScan();
     if (rc == AUTH_OK) {
         SetTextW(g_dashScanStatus,
-                 L"\x0421\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435 \x0437\x0430\x043F\x0443\x0449\x0435\x043D\x043E");  /* Сканирование запущено */
+                 L"\x0421\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435 \x0437\x0430\x043F\x0443\x0449\x0435\x043D\x043E");
     } else if (rc == AUTH_ERR_LICENSE_MISSING) {
         SetTextW(g_dashScanStatus,
-                 L"\x041D\x0435\x0442 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");  /* Нет лицензии */
+                 L"\x041D\x0435\x0442 \x043B\x0438\x0446\x0435\x043D\x0437\x0438\x0438");
     } else {
         SetTextW(g_dashScanStatus,
-                 L"\x041E\x0448\x0438\x0431\x043A\x0430");  /* Ошибка */
+                 L"\x041E\x0448\x0438\x0431\x043A\x0430");
+    }
+}
+
+static void OnScanFileClicked(HWND hwnd) {
+    WCHAR filePath[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = hwnd;
+    ofn.lpstrFile   = filePath;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = L"\x0412\x0441\x0435 \x0444\x0430\x0439\x043B\x044B\0*.*\0\0";
+    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+
+    if (!GetOpenFileNameW(&ofn)) return;
+
+    SetTextW(g_dashScanStatus,
+             L"\x0421\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435...");
+
+    WCHAR *result = NULL;
+    long rc = RpcScanFile(filePath, &result);
+    if (rc == AUTH_OK && result) {
+        SetTextW(g_dashScanStatus, result);
+        MIDL_user_free(result);
+    } else {
+        if (result) MIDL_user_free(result);
+        SetTextW(g_dashScanStatus,
+                 L"\x041E\x0448\x0438\x0431\x043A\x0430 \x0441\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x044F");
+    }
+}
+
+static void OnScanDirClicked(HWND hwnd) {
+    WCHAR dirPath[MAX_PATH] = L"";
+    BROWSEINFOW bi = {};
+    bi.hwndOwner = hwnd;
+    bi.lpszTitle = L"\x0412\x044B\x0431\x0435\x0440\x0438\x0442\x0435 \x043F\x0430\x043F\x043A\x0443 \x0434\x043B\x044F \x0441\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x044F";
+    bi.ulFlags   = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+
+    PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return;
+    SHGetPathFromIDListW(pidl, dirPath);
+    CoTaskMemFree(pidl);
+
+    if (dirPath[0] == L'\0') return;
+
+    SetTextW(g_dashScanStatus,
+             L"\x0421\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435...");
+
+    WCHAR *result = NULL;
+    long rc = RpcScanDirectory(dirPath, &result);
+    if (rc == AUTH_OK && result) {
+        SetTextW(g_dashScanStatus, result);
+        MIDL_user_free(result);
+    } else {
+        if (result) MIDL_user_free(result);
+        SetTextW(g_dashScanStatus,
+                 L"\x041E\x0448\x0438\x0431\x043A\x0430 \x0441\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x044F");
     }
 }
 
@@ -552,13 +634,18 @@ static void CreatePages(HWND hwnd) {
     g_actError    = MkLabel (hwnd, 0, 20, 150, 400, 40, L"");
 
     /* --- Dashboard page --- */
-    g_dashTitle      = MkLabel (hwnd, 0, 20,  10, 400, 24,
-                                L"\x0417\x0430\x0449\x0438\x0442\x0430 \x0430\x043A\x0442\x0438\x0432\x043D\x0430");  /* Защита активна */
-    g_dashUserLbl    = MkLabel (hwnd, 0, 20,  50, 400, 20, L"");
-    g_dashExpiryLbl  = MkLabel (hwnd, 0, 20,  80, 400, 20, L"");
-    g_dashScanBtn    = MkButton(hwnd, IDC_DASH_SCAN, 20, 120, 200, 32,
-                                L"\x0417\x0430\x043F\x0443\x0441\x0442\x0438\x0442\x044C \x0441\x043A\x0430\x043D\x0438\x0440\x043E\x0432\x0430\x043D\x0438\x0435");  /* Запустить сканирование */
-    g_dashScanStatus = MkLabel (hwnd, 0, 20, 160, 400, 40, L"");
+    g_dashTitle        = MkLabel (hwnd, 0, 20,  10, 460, 24,
+                                  L"\x0417\x0430\x0449\x0438\x0442\x0430 \x0430\x043A\x0442\x0438\x0432\x043D\x0430");
+    g_dashUserLbl      = MkLabel (hwnd, 0, 20,  50, 460, 20, L"");
+    g_dashExpiryLbl    = MkLabel (hwnd, 0, 20,  80, 460, 20, L"");
+    g_dashAvDbInfoLbl  = MkLabel (hwnd, 0, 20, 110, 460, 20, L"");
+    g_dashScanBtn      = MkButton(hwnd, IDC_DASH_SCAN,     20, 145, 140, 30,
+                                  L"\x041F\x0440\x043E\x0432\x0435\x0440\x0438\x0442\x044C");
+    g_dashScanFileBtn  = MkButton(hwnd, IDC_DASH_SCANFILE, 170, 145, 140, 30,
+                                  L"\x0421\x043A\x0430\x043D. \x0444\x0430\x0439\x043B");
+    g_dashScanDirBtn   = MkButton(hwnd, IDC_DASH_SCANDIR,  320, 145, 140, 30,
+                                  L"\x0421\x043A\x0430\x043D. \x043F\x0430\x043F\x043A\x0443");
+    g_dashScanStatus   = MkLabel (hwnd, 0, 20, 185, 460, 80, L"");
 }
 
 // ============================================================
@@ -599,7 +686,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 FormatFileTime(expFt, when, 64);
                 WCHAR expLine[160];
                 swprintf(expLine, 160,
-                         L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %s",
+                         L"\x041B\x0438\x0446\x0435\x043D\x0437\x0438\x044F \x0434\x0435\x0439\x0441\x0442\x0432\x0438\x0442\x0435\x043B\x044C\x043D\x0430 \x0434\x043E: %ls",
                          when);
                 SetTextW(g_dashExpiryLbl, expLine);
                 if (g_page != PAGE_DASHBOARD) ShowPage(PAGE_DASHBOARD);
@@ -622,7 +709,9 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         case IDM_ACCT_LOGOUT: OnAccountLogout(hwnd);         break;
         case IDC_LOGIN_BTN:   OnLoginClicked(hwnd);          break;
         case IDC_ACT_BTN:     OnActivateClicked(hwnd);       break;
-        case IDC_DASH_SCAN:   OnScanClicked(hwnd);           break;
+        case IDC_DASH_SCAN:     OnScanClicked(hwnd);           break;
+        case IDC_DASH_SCANFILE: OnScanFileClicked(hwnd);       break;
+        case IDC_DASH_SCANDIR:  OnScanDirClicked(hwnd);        break;
         }
         return 0;
 
@@ -662,6 +751,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         return 0;
     }
 
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
     WM_TASKBARCREATED = RegisterWindowMessageW(L"TaskbarCreated");
 
     WNDCLASSEXW wc = {};
@@ -690,7 +781,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     g_hwnd = CreateWindowExW(
         0, CLASS_NAME, WINDOW_TITLE,
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 520, 360,
+        CW_USEDEFAULT, CW_USEDEFAULT, 520, 400,
         NULL, hMenuBar, hInstance, NULL);
 
     if (!g_hwnd) { CloseHandle(hMutex); return 1; }
@@ -715,6 +806,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     }
 
     CloseRpcBinding();
+    CoUninitialize();
     ReleaseMutex(hMutex);
     CloseHandle(hMutex);
     return (int)msg.wParam;
