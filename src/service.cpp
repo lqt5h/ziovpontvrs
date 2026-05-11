@@ -160,6 +160,9 @@ extern "C" long RpcScanDirectory(const wchar_t *dirPath, wchar_t **resultMessage
             details += L"\n";
         } else if (r.result == av::SCAN_ERROR) {
             errors++;
+            details += L"\x041E\x0448\x0438\x0431\x043A\x0430: ";
+            details += r.filePath;
+            details += L"\n";
         }
     }
 
