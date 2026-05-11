@@ -520,6 +520,18 @@ static void OnAccountLogout(HWND hwnd) {
 }
 
 static void OnScanClicked(HWND /*hwnd*/) {
+    long dbCount = 0;
+    WCHAR *dbDate = NULL;
+    if (RpcGetAvDatabaseInfo(&dbCount, &dbDate) == AUTH_OK) {
+        WCHAR dbInfo[256];
+        swprintf(dbInfo, 256,
+                 L"\x0410\x0412 \x0431\x0430\x0437\x044B: %ls, "
+                 L"\x0437\x0430\x043F\x0438\x0441\x0435\x0439: %ld",
+                 dbDate ? dbDate : L"-", dbCount);
+        SetTextW(g_dashAvDbInfoLbl, dbInfo);
+        if (dbDate) MIDL_user_free(dbDate);
+    }
+
     long rc = RpcAntivirusScan();
     if (rc == AUTH_OK) {
         SetTextW(g_dashScanStatus,
