@@ -61,7 +61,7 @@ bool DoRequest(const wchar_t* verb,
     WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS,
                      &secFlags, sizeof(secFlags));
 
-    std::wstring headers = L"Content-Type: application/json\r\nAccept: application/json\r\n";
+    std::wstring headers = L"Content-Type: application/json\r\nAccept: */*\r\n";
     if (bearer_token && !bearer_token->empty()) {
         headers += L"Authorization: Bearer ";
         headers += Widen(*bearer_token);
