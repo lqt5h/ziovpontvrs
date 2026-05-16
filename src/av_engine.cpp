@@ -61,6 +61,52 @@ std::vector<uint8_t> ComputeSHA256(const uint8_t* data, size_t len) {
     return hash;
 }
 
+bool ContainsAsciiPattern(const uint8_t* data, size_t dataLen, const char* pattern) {
+    if (!data || !pattern)
+        return false;
+    const size_t patternLen = strlen(pattern);
+    if (patternLen == 0 || dataLen < patternLen)
+        return false;
+
+    for (size_t pos = 0; pos + patternLen <= dataLen; pos++) {
+        if (memcmp(data + pos, pattern, patternLen) == 0)
+            return true;
+    }
+    return false;
+}
+
+bool ContainsUtf16LeAsciiPattern(const uint8_t* data, size_t dataLen, const char* pattern) {
+    if (!data || !pattern)
+        return false;
+    const size_t patternLen = strlen(pattern);
+    const size_t encodedLen = patternLen * 2;
+    if (patternLen == 0 || dataLen < encodedLen)
+        return false;
+
+    for (size_t pos = 0; pos + encodedLen <= dataLen; pos++) {
+        bool matched = true;
+        for (size_t i = 0; i < patternLen; i++) {
+            if (data[pos + i * 2] != static_cast<uint8_t>(pattern[i]) ||
+                data[pos + i * 2 + 1] != 0) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched)
+            return true;
+    }
+    return false;
+}
+
+bool ContainsEicarTestFile(const uint8_t* data, size_t dataLen) {
+    static const char kEicar[] =
+        "X5O!P%@AP[4\\PZX54(P^)7CC)7}$"
+        "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+
+    return ContainsAsciiPattern(data, dataLen, kEicar) ||
+           ContainsUtf16LeAsciiPattern(data, dataLen, kEicar);
+}
+
 av::ObjectType MapFileType(const std::string& ft) {
     if (ft == "PE" || ft == "pe" || ft == "exe" || ft == "EXE" ||
         ft == "dll" || ft == "DLL")
@@ -327,6 +373,9 @@ ObjectType DetectFileType(const std::wstring& path) {
 
 ScanResult ScanStream(const uint8_t* data, size_t dataLen, ObjectType objType) {
     if (dataLen < 8) return SCAN_CLEAN;
+
+    if (ContainsEicarTestFile(data, dataLen))
+        return SCAN_MALICIOUS;
 
     EnterCriticalSection(&g_dbLock);
 
