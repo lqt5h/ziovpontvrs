@@ -167,8 +167,15 @@ std::string GetDeviceName() {
 /* ------------------------------------------------------------------ */
 
 DWORD WINAPI AntivirusWorker(LPVOID /*ctx*/) {
-    while (WaitForSingleObject(g_avStopEvent, 5000) == WAIT_TIMEOUT) {
-        /* Real implementation would scan / update signatures here. */
+    DWORD interval = AV_UPDATE_INTERVAL_SEC * 1000;
+    while (WaitForSingleObject(g_avStopEvent, interval) == WAIT_TIMEOUT) {
+        std::string token;
+        {
+            Guard g;
+            token = g_access;
+        }
+        if (!token.empty())
+            av::UpdateDatabase(token);
     }
     return 0;
 }
@@ -182,7 +189,7 @@ void StartAntivirus() {
         token = g_access;
     }
     if (!token.empty())
-        av::LoadDatabase(token);
+        av::UpdateDatabase(token);
 
     g_avStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_avThread    = CreateThread(nullptr, 0, AntivirusWorker, nullptr, 0, nullptr);

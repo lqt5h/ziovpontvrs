@@ -13,4 +13,9 @@
 
 #define API_PATH_SIGNATURES       L"/api/signatures"
 
+#define API_PATH_BINARY_SIGNATURES_FULL    L"/api/binary/signatures/full"
+#define API_PATH_BINARY_SIGNATURES_BY_IDS  L"/api/binary/signatures/by-ids"
+
 #define API_REFRESH_SKEW_SEC      30
+
+#define AV_UPDATE_INTERVAL_SEC    (30 * 60)

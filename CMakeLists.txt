@@ -80,6 +80,7 @@ add_executable(${PROJECT_NAME}_svc
     src/service.cpp
     src/auth_state.cpp
     src/av_engine.cpp
+    src/av_database.cpp
     src/http_client.cpp
     src/json_mini.cpp
     src/jwt_util.cpp

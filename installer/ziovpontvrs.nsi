@@ -54,6 +54,10 @@ Section "Install"
     File "${EXE_GUI}"
     File "${EXE_SVC}"
 
+    ; --- Default AV database files ---
+    File "default_manifest.bin"
+    File "default_data.bin"
+
     ; --- Req 2: third-party dependencies ---
     Call IsVCRedistInstalled
     Pop $0
@@ -151,6 +155,12 @@ Section "Uninstall"
     Delete "$INSTDIR\${EXE_GUI}"
     Delete "$INSTDIR\${EXE_SVC}"
     Delete "$INSTDIR\${UNINSTALLER}"
+    Delete "$INSTDIR\default_manifest.bin"
+    Delete "$INSTDIR\default_data.bin"
+    Delete "$INSTDIR\manifest.bin"
+    Delete "$INSTDIR\data.bin"
+    Delete "$INSTDIR\manifest.bin.bak"
+    Delete "$INSTDIR\data.bin.bak"
     RMDir "$INSTDIR"
 
     ; Clean up registry
